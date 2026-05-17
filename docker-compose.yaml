@@ -1,67 +1,105 @@
-version: '3.9'
-
-networks:
-  mchrama:
-
 services:
-  php:
-    container_name: php_comtainer
-    image: php:8.1-fpm-alpine
+  mongodb:
+    container_name: mongodb
+    image: mongodb-8
+    build:
+      context: ./mongo/
+      args:
+        MONGO_VERSION: 8.0
+    environment:
+      MONGO_REPLICA_HOST: 127.0.0.1
+      MONGO_REPLICA_PORT: 2192
+      MONGO_COMMAND: "mongosh"
     ports:
-      - "9000:9000"
+      - "2192:2192"
     volumes:
-      - ./src:/code
-    networks:
-      - mchrama
+      - ./data/mongo:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "admin",
+          "--port",
+          "2192",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
 
-  nginx:
-    container_name: nginx_container
-    image: nginx:latest
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ggwp
+      POSTGRES_PASSWORD: ggwp
+      POSTGRES_DB: distributor
     ports:
-      - "80:80"
+      - "5432:5432"
     volumes:
-      - ./src:/code
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
-    networks:
-      - mchrama
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: postgres_ui
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: qweqweqwe
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
   mysql:
     image: mysql:latest
-    container_name: db
+    container_name: mysql
     environment:
-      MYSQL_ROOT_PASSWORD: 'P@ssw0rd'
-      MYSQL_DATABASE: 'magnercare'
-
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_HOST: "%"
+    restart: always
     ports:
-      - "3306:3306"
+      - "3192:3306"
     volumes:
-      - ./docker/dbdata:/var/lib/mysql
-    networks:
-      - mchrama
+      - ./data/mysql:/var/lib/mysql
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: pma
-    links:
+    depends_on:
       - mysql
     environment:
       PMA_HOST: mysql
       UPLOAD_LIMIT: 512M
     restart: always
     ports:
-      - 88:80
-    networks:
-      - mchrama
+      - "88:80"
 
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: always
     ports:
-      - 6379:6379
+      - "6379:6379"
     volumes:
-      - ./docker/redisdata:/data
-    networks:
-      - mchrama
+      - ./data/redis:/data
 
+  localstack:
+    container_name: s3-Localstack
+    image: localstack/localstack
+    ports:
+      - "127.0.0.1:4566:4566"
+      - "127.0.0.1:4510-4559:4510-4559"
+    environment:
+      - DEBUG=0
+      - PERSISTENCE=1
+    volumes:
+      - ./data/localstack:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
 
-
+volumes:
+  postgres_data:
